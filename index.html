@@ -96,6 +96,7 @@
     <script>
         let parsedData = [];
         let invoiceColumns = [];
+        let monthColumns = [];
 
         const fileUploadWrapper = document.getElementById('fileUploadWrapper');
         const fileInput = document.getElementById('csvFileInput');
@@ -152,9 +153,16 @@
             parsedData = data;
             if (data.length > 0) {
                 const headers = Object.keys(data[0]);
-                // --- INVOICE REGEX FIX ---
-                // This regex is now more flexible to catch formats like XX-XX-XX and XX-XX-XXX
                 invoiceColumns = headers.filter(h => h && (h.match(/^\d{2}-\d{2}-\d{2,3}$/) || h.match(/^\d{6}$/)));
+                
+                // --- MONTH DETECTION FIX ---
+                // This list is now more comprehensive to catch full names and abbreviations.
+                const monthNames = ['jan', 'january', 'feb', 'february', 'mar', 'march', 'apr', 'april', 'may', 'jun', 'june', 'jul', 'july', 'aug', 'august', 'sep', 'september', 'oct', 'october', 'nov', 'november', 'dec', 'december'];
+                monthColumns = headers.filter(h => {
+                    if (!h) return false;
+                    const lowerCaseHeader = h.toLowerCase().trim();
+                    return monthNames.includes(lowerCaseHeader);
+                });
                 // --- END FIX ---
             }
         }
@@ -177,22 +185,14 @@
             });
 
             // --- SORTING LOGIC ---
-            // Sorts results to show "NOT COMPLETED" items first.
             searchResults.sort((a, b) => {
                 const statusA_raw = a.STATUS || '';
                 const statusB_raw = b.STATUS || '';
-                
-                // Treat anything that isn't explicitly 'completed' or 'x' as incomplete.
                 const isA_incomplete = !statusA_raw.toLowerCase().includes('completed') && statusA_raw.toLowerCase() !== 'x';
                 const isB_incomplete = !statusB_raw.toLowerCase().includes('completed') && statusB_raw.toLowerCase() !== 'x';
-
-                if (isA_incomplete && !isB_incomplete) {
-                    return -1; // a comes first
-                }
-                if (!isA_incomplete && isB_incomplete) {
-                    return 1; // b comes first
-                }
-                return 0; // order is the same
+                if (isA_incomplete && !isB_incomplete) return -1;
+                if (!isA_incomplete && isB_incomplete) return 1;
+                return 0;
             });
             // --- END SORTING LOGIC ---
 
@@ -239,13 +239,24 @@
                 }
             }
             
-            // --- DYNAMIC PRIORITY FIX ---
             const priorityKey = Object.keys(row).find(key => key.toLowerCase().includes('priority'));
-            let priorityValue = priorityKey ? row[priorityKey] : undefined;
+            let priorityValue = priorityKey ? row[priorityKey] : 'Not Set';
             if (priorityValue === undefined || priorityValue === null || String(priorityValue).trim() === '') {
                 priorityValue = 'Not Set';
             }
-            // --- END FIX ---
+
+            // --- Get Expected Delivery Info ---
+            const expectedDeliveries = [];
+            monthColumns.forEach(month => {
+                const qtyInMonth = parseInt(row[month], 10) || 0;
+                if (qtyInMonth > 0) {
+                    expectedDeliveries.push(`<strong>${qtyInMonth}</strong> in ${month}`);
+                }
+            });
+            const expectedDeliveriesHTML = expectedDeliveries.length > 0
+                ? `<p><span class="label">Expected Deliveries:</span> ${expectedDeliveries.join('; ')}.</p>`
+                : '';
+            // --- END ---
 
             return `
                 <div class="snapshot-card">
@@ -253,6 +264,7 @@
                     <p><span class="label">Overall Status:</span> <span class="${statusClass}">${statusText}</span>.</p>
                     <p><span class="label">Order Details:</span> The total order was for <strong>${totalOrdered}</strong> unit(s) under PO <strong>#${row['PO #'] || 'N/A'}</strong>. The priority is <strong>${priorityValue}</strong>.</p>
                     <p><span class="label">Fulfillment Details:</span> ${fulfilledInvoices.length > 0 ? `We received a total of <strong>${totalInvoiced}</strong> unit(s): ${fulfilledInvoices.join('; ')}.` : 'No units have been invoiced yet.'}</p>
+                    ${expectedDeliveriesHTML}
                     <p><span class="label">Balance & Issues:</span> The current balance is <strong>${balance}</strong>. ${issueText ? `<span class="issue">${issueText}</span>` : ''}</p>
                 </div>
             `;
